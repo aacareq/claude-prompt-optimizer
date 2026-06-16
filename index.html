@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prompt Optimizer — Token-Efficient Prompting</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0f0f;
+    --bg2: #1a1a1a;
+    --bg3: #242424;
+    --border: rgba(255,255,255,0.1);
+    --border2: rgba(255,255,255,0.18);
+    --text: #f0f0f0;
+    --text2: #a0a0a0;
+    --text3: #606060;
+    --green: #1D9E75;
+    --green-bg: #0a2e22;
+    --green-text: #5DCAA5;
+    --orange: #D85A30;
+    --orange-bg: #2e1508;
+    --orange-text: #F0997B;
+    --gray-bg: #1e1e1e;
+    --gray-text: #888;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+    padding: 2rem 1rem 4rem;
+  }
+
+  .container { max-width: 900px; margin: 0 auto; }
+
+  header { margin-bottom: 2rem; }
+  header h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+  header p { font-size: 14px; color: var(--text2); margin-top: 5px; }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 1.25rem;
+  }
+
+  .stat {
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    text-align: center;
+  }
+
+  .stat-val {
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  .stat-val.good { color: var(--green-text); }
+  .stat-val.bad  { color: var(--orange-text); }
+
+  .stat-lbl {
+    font-size: 11px;
+    color: var(--text3);
+    margin-top: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  .panel {
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel-label {
+    font-size: 11px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-weight: 600;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 170px;
+    resize: vertical;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text);
+    background: var(--bg3);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  textarea:focus { border-color: var(--border2); }
+
+  .output-box {
+    min-height: 170px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text);
+    background: var(--bg3);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .output-box.empty { color: var(--text3); font-style: italic; }
+
+  .actions { display: flex; gap: 8px; }
+
+  button {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    border: 0.5px solid var(--border2);
+    background: transparent;
+    color: var(--text);
+    transition: background 0.12s;
+  }
+
+  button:hover { background: var(--bg3); }
+
+  button.primary {
+    background: var(--bg3);
+    border-color: var(--border2);
+  }
+
+  .copy-btn {
+    font-size: 11px;
+    padding: 4px 10px;
+    color: var(--text2);
+    border-color: var(--border);
+  }
+
+  .changes-section { margin-top: 1.5rem; }
+
+  .changes-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text3);
+    margin-bottom: 10px;
+  }
+
+  .change-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px 0;
+    border-top: 0.5px solid var(--border);
+  }
+
+  .tag {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+
+  .tag-removed  { background: var(--orange-bg); color: var(--orange-text); }
+  .tag-added    { background: var(--green-bg);  color: var(--green-text); }
+  .tag-neutral  { background: var(--gray-bg);   color: var(--gray-text); }
+
+  .change-desc { font-size: 13px; line-height: 1.55; color: var(--text2); }
+  .change-desc strong { color: var(--text); font-weight: 500; }
+
+  .savings-badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: var(--green-bg);
+    color: var(--green-text);
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  .savings-badge.neutral {
+    background: var(--gray-bg);
+    color: var(--gray-text);
+  }
+
+  footer {
+    margin-top: 3rem;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text3);
+  }
+
+  @media (max-width: 620px) {
+    .cols { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: 1fr 1fr; }
+    .stats-row .stat:last-child { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Prompt Optimizer</h1>
+    <p>Paste a rough prompt. Get a leaner rewrite + a breakdown of what changed and why.</p>
+  </header>
+
+  <div class="stats-row">
+    <div class="stat">
+      <div class="stat-val" id="orig-tokens">—</div>
+      <div class="stat-lbl">Original tokens</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="opt-tokens">—</div>
+      <div class="stat-lbl">Optimised tokens</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="savings">—</div>
+      <div class="stat-lbl">Tokens saved</div>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="panel">
+      <div class="panel-label">Your prompt</div>
+      <textarea id="input" placeholder="e.g. Hey Claude, so I've been working on this app and I'm not quite sure what the best approach is for building an API endpoint that handles user authentication, could you help me think through the options?"></textarea>
+      <div class="actions">
+        <button class="primary" onclick="optimize()">Optimise →</button>
+        <button onclick="clearAll()">Clear</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-label">Optimised prompt</div>
+        <span id="copy-wrap"></span>
+      </div>
+      <div class="output-box empty" id="output">Your optimised prompt will appear here.</div>
+    </div>
+  </div>
+
+  <div class="changes-section" id="changes-wrap" style="display:none">
+    <div class="changes-title">What changed &amp; why</div>
+    <div id="changes-list"></div>
+  </div>
+
+  <footer>Built for token-efficient prompting on Claude free tier &mdash; runs fully offline, no API calls.</footer>
+
+</div>
+<script>
+  const RULES = [
+    {
+      id: 'greeting',
+      label: 'Removed greeting / filler',
+      tag: 'removed',
+      desc: 'Opening phrases like <strong>"Hey Claude"</strong> or <strong>"So I\'ve been thinking"</strong> cost tokens with zero added meaning. Claude needs no social warmup.',
+      saving: 3,
+      detect: t => /\b(hey claude|hi claude|hello claude|so i['']ve been|i['']ve been thinking|i was wondering|i['']m not quite sure|could you maybe|could you help me think)\b/i.test(t),
+      apply: t => t
+        .replace(/\b(hey claude[,.]?\s*|hi claude[,.]?\s*|hello claude[,.]?\s*)/ig, '')
+        .replace(/so i['']ve been (working on|thinking about)\s+/ig, '')
+        .replace(/i was wondering\s+/ig, '')
+        .replace(/i['']m not quite sure\s+/ig, '')
+        .replace(/could you maybe\s+/ig, '')
+        .replace(/could you help me think through\s+/ig, '')
+        .trim()
+    },
+    {
+      id: 'passive',
+      label: 'Removed passive phrasing',
+      tag: 'removed',
+      desc: 'Phrases like <strong>"could you"</strong>, <strong>"would you be able to"</strong>, <strong>"I need you to"</strong> are polite but wasteful. Imperative verbs are shorter and equally clear.',
+      saving: 4,
+      detect: t => /\b(could you|would you|can you|i was hoping|i need you to|please help me|i['']d like you to)\b/i.test(t),
+      apply: t => t.replace(/\b(could you |would you |can you |i was hoping you could |i need you to |please help me |i['']d like you to )/ig, '')
+    },
+    {
+      id: 'context_bloat',
+      label: 'Removed context bloat',
+      tag: 'removed',
+      desc: 'Filler phrases like <strong>"as you know"</strong>, <strong>"basically"</strong>, and <strong>"just to give you some context"</strong> add tokens without changing Claude\'s answer.',
+      saving: 6,
+      detect: t => /\b(as you know|just to give you some context|to explain a bit more|i should mention that|by the way|anyway,|basically,|essentially,|in other words)\b/i.test(t),
+      apply: t => t.replace(/\b(as you know[,]?\s*|just to give you some context[,]?\s*|to explain a bit more[,]?\s*|i should mention that\s*|by the way[,]?\s*|anyway[,]?\s*|basically[,]?\s*|essentially[,]?\s*|in other words[,]?\s*)/ig, '')
+    },
+    {
+      id: 'specificity',
+      label: 'Added output constraint',
+      tag: 'added',
+      desc: 'No output format was specified. Adding a constraint like <strong>"bullet points"</strong> or <strong>"be concise"</strong> stops Claude writing long essays that pile up in your context window.',
+      saving: 0,
+      detect: t => !/\b(list|bullet|points?|steps?|sentence|concise|brief|short|max \d+|in \d+|one-line|table|summary)\b/i.test(t) && t.length > 80,
+      apply: t => t.trim().replace(/[.?]*$/, '') + '. Be concise, answer in bullet points.'
+    },
+    {
+      id: 'vague',
+      label: 'Vague open-ended ask detected',
+      tag: 'neutral',
+      desc: 'Phrases like <strong>"help me think through"</strong> or <strong>"tell me about"</strong> invite wide, expensive responses. Narrow to one specific output — e.g. <strong>"List the 3 main tradeoffs."</strong>',
+      saving: 0,
+      detect: t => /\b(help me think|think through|brainstorm|explore options|discuss|tell me about|what do you think about|walk me through)\b/i.test(t),
+      apply: t => t
+    }
+  ];
+
+  function countTokens(text) {
+    return Math.round(text.trim().split(/\s+/).filter(Boolean).length * 1.33);
+  }
+
+  function optimize() {
+    const raw = document.getElementById('input').value.trim();
+    if (!raw) return;
+
+    let result = raw;
+    const applied = [];
+
+    RULES.forEach(r => {
+      if (r.detect(result)) {
+        const before = result;
+        result = r.apply(result);
+        applied.push({ ...r, mutated: result !== before });
+      }
+    });
+
+    result = result.replace(/\s{2,}/g, ' ').replace(/^\s+|\s+$/, '').replace(/^[,.\s]+/, '');
+    result = result.charAt(0).toUpperCase() + result.slice(1);
+
+    const origT  = countTokens(raw);
+    const optT   = countTokens(result);
+    const saved  = Math.max(0, origT - optT);
+
+    document.getElementById('orig-tokens').textContent = origT;
+    document.getElementById('opt-tokens').textContent  = optT;
+
+    const sv = document.getElementById('savings');
+    sv.textContent  = (saved > 0 ? '-' : '') + saved;
+    sv.className    = 'stat-val ' + (saved > 2 ? 'good' : saved === 0 ? 'bad' : '');
+
+    const outEl = document.getElementById('output');
+    outEl.textContent = result;
+    outEl.className   = 'output-box';
+
+    document.getElementById('copy-wrap').innerHTML =
+      '<button class="copy-btn" onclick="copyOut()">Copy</button>';
+
+    const list = document.getElementById('changes-list');
+    list.innerHTML = '';
+
+    if (applied.length === 0) {
+      list.innerHTML = '<div class="change-item"><div class="change-desc">No major issues found — your prompt is already fairly lean.</div></div>';
+    } else {
+      applied.forEach(r => {
+        const div = document.createElement('div');
+        div.className = 'change-item';
+        const badge = r.saving > 0
+          ? `<span class="savings-badge">~${r.saving} tokens saved</span>`
+          : r.tag === 'neutral'
+            ? `<span class="savings-badge neutral">manual fix needed</span>`
+            : '';
+        div.innerHTML = `<span class="tag tag-${r.tag}">${r.label}</span><div class="change-desc">${r.desc}${badge}</div>`;
+        list.appendChild(div);
+      });
+    }
+
+    document.getElementById('changes-wrap').style.display = 'block';
+  }
+
+  function copyOut() {
+    const t = document.getElementById('output').textContent;
+    navigator.clipboard.writeText(t).then(() => {
+      const btn = document.querySelector('.copy-btn');
+      if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); }
+    }).catch(() => {});
+  }
+
+  function clearAll() {
+    document.getElementById('input').value = '';
+    const out = document.getElementById('output');
+    out.textContent = 'Your optimised prompt will appear here.';
+    out.className   = 'output-box empty';
+    ['orig-tokens','opt-tokens','savings'].forEach(id => {
+      const el = document.getElementById(id);
+      el.textContent = '—';
+      el.className = 'stat-val';
+    });
+    document.getElementById('changes-wrap').style.display = 'none';
+    document.getElementById('copy-wrap').innerHTML = '';
+  }
+
+  document.getElementById('input').addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') optimize();
+  });
+</script>
+</body>
+</html>
